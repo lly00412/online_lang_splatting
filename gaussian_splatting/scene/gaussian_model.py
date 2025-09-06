@@ -35,10 +35,11 @@ class GaussianModel:
     """
     A class representing a 3D Gaussian model for rendering.
     """
+
     def __init__(self, sh_degree: int, config=None):
         """
         Initialize a Gaussian model.
-        
+
         Args:
             sh_degree: Maximum spherical harmonics degree
             config: Configuration dictionary
@@ -55,9 +56,15 @@ class GaussianModel:
         self._rotation = torch.empty(0, device="cuda")
         self._opacity = torch.empty(0, device="cuda")
         self._language_feature = torch.empty(0, device="cuda")
-        
+
+        # language disent mode
+        self._scaling_lang = torch.empty(0, device="cuda")
+        self._rotation_lang = torch.empty(0, device="cuda")
+        self._opacity_lang = torch.empty(0, device="cuda")
+
         # Tracking
         self.max_radii2D = torch.empty(0, device="cuda")
+        self.max_radii2D_lang = torch.empty(0, device="cuda")
         self.xyz_gradient_accum = torch.empty(0, device="cuda")
         self.unique_kfIDs = torch.empty(0).int()
         self.n_obs = torch.empty(0).int()
@@ -76,7 +83,7 @@ class GaussianModel:
         self.is_language = False
         if config and "language" in config and "language_train" in config["language"]:
             self.is_language = config["language"]["language_train"]
-        
+
         self.ply_input = None
         self.optimizer = None
         self.isotropic = False
@@ -97,24 +104,37 @@ class GaussianModel:
         return self.opacity_activation(self._opacity)
 
     @property
+    def get_opacity_lang(self):
+        return self.opacity_activation(self._opacity_lang)
+
+    @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
+
+    @property
+    def get_scaling_lang(self):
+        return self.scaling_activation(self._scaling_lang)
 
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
 
     @property
+    def get_rotation_lang(self):
+        return self.rotation_activation(self._rotation_lang)
+
+    @property
     def get_language_features(self):
         if self._language_feature is not None:
             return self._language_feature
-        raise ValueError('No language feature')
-        
+        raise ValueError("No language feature")
+
     def get_covariance(self, scaling_modifier=1):
         """Calculate the covariance matrix from scaling and rotation."""
-        return self.covariance_activation(
-            self.get_scaling, scaling_modifier, self._rotation
-        )
+        return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
+
+    def get_covariance_lang(self, scaling_modifier=1):
+        return self.covariance_activation(self.get_scaling_lang, scaling_modifier, self._rotation_lang)
 
     def build_covariance_from_scaling_rotation(self, scaling, scaling_modifier, rotation):
         """Build covariance matrix from scaling and rotation."""
@@ -135,13 +155,13 @@ class GaussianModel:
     def create_pcd_from_image(self, cam_info, init=False, scale=2.0, depthmap=None):
         """
         Create a point cloud from an image and depth data.
-        
+
         Args:
             cam_info: Camera information
             init: Whether this is initial creation
             scale: Scale factor for depth
             depthmap: Optional pre-computed depth map
-            
+
         Returns:
             Point cloud data
         """
@@ -150,7 +170,7 @@ class GaussianModel:
         image_ab = (torch.exp(cam.exposure_a)) * cam.original_image + cam.exposure_b
         image_ab = torch.clamp(image_ab, 0.0, 1.0)
         rgb_raw = (image_ab * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy()
-        
+
         # Process depth
         if depthmap is not None:
             rgb = o3d.geometry.Image(rgb_raw.astype(np.uint8))
@@ -163,31 +183,29 @@ class GaussianModel:
             if self.config["Dataset"]["sensor_type"] == "monocular":
                 # Create synthetic depth for monocular sensors
                 depth_raw = (
-                    np.ones_like(depth_raw)
-                    + (np.random.randn(depth_raw.shape[0], depth_raw.shape[1]) - 0.5)
-                    * 0.05
+                    np.ones_like(depth_raw) + (np.random.randn(depth_raw.shape[0], depth_raw.shape[1]) - 0.5) * 0.05
                 ) * scale
 
             rgb = o3d.geometry.Image(rgb_raw.astype(np.uint8))
             depth = o3d.geometry.Image(depth_raw.astype(np.float32))
-        
+
         # Create point cloud
         if self.is_language:
             return self.create_pcd_from_image_and_depth(cam, rgb, None, depth, init)
-        
+
         return self.create_pcd_from_image_and_depth(cam, rgb, None, depth, init)
 
     def create_pcd_from_image_and_depth(self, cam, rgb, language_map, depth, init=False):
         """
         Create a point cloud from RGB and depth images.
-        
+
         Args:
             cam: Camera information
             rgb: RGB image
             language_map: Optional language feature map
             depth: Depth image
             init: Whether this is initial creation
-            
+
         Returns:
             Point cloud components
         """
@@ -196,13 +214,13 @@ class GaussianModel:
             downsample_factor = self.config["Dataset"]["pcd_downsample_init"]
         else:
             downsample_factor = self.config["Dataset"]["pcd_downsample"]
-            
+
         # Get point size from config
         point_size = self.config["Dataset"]["point_size"]
         if "adaptive_pointsize" in self.config["Dataset"]:
             if self.config["Dataset"]["adaptive_pointsize"]:
                 point_size = min(0.05, point_size * np.median(depth))
-                
+
         # Create RGBD image from color and depth
         rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
             rgb,
@@ -227,28 +245,22 @@ class GaussianModel:
             extrinsic=W2C,
             project_valid_depth_only=True,
         )
-        
+
         # Downsample point cloud
         pcd_tmp = pcd_tmp.random_down_sample(1.0 / downsample_factor)
         new_xyz = np.asarray(pcd_tmp.points)
         new_rgb = np.asarray(pcd_tmp.colors)
 
         # Create basic point cloud
-        pcd = BasicPointCloud(
-            points=new_xyz, colors=new_rgb, normals=np.zeros((new_xyz.shape[0], 3))
-        )
+        pcd = BasicPointCloud(points=new_xyz, colors=new_rgb, normals=np.zeros((new_xyz.shape[0], 3)))
         self.ply_input = pcd
 
         # Convert to tensors
         fused_point_cloud = torch.from_numpy(np.asarray(pcd.points)).float().cuda()
         fused_color = RGB2SH(torch.from_numpy(np.asarray(pcd.colors)).float().cuda())
-        
+
         # Initialize features
-        features = (
-            torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2))
-            .float()
-            .cuda()
-        )
+        features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
         features[:, :3, 0] = fused_color
         features[:, 3:, 1:] = 0.0
 
@@ -263,29 +275,41 @@ class GaussianModel:
         scales = torch.log(torch.sqrt(dist2))[..., None]
         if not self.isotropic:
             scales = scales.repeat(1, 3)
+        # clone the scales
+        scales_lang = scales.detach().clone()
 
         # Initialize rotations and opacities
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
-        opacities = inverse_sigmoid(
-            0.5
-            * torch.ones(
-                (fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"
-            )
-        )
-        
+        # clone the rotation
+        rots_lang = rots.detach().clone()
+
+        opacities = inverse_sigmoid(0.5 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+        # clone the opacities
+        opacities_lang = opacities.detach().clone()
+
         # Return components based on whether language features are used
         if self.is_language:
-            return fused_point_cloud, features, None, scales, rots, opacities
+            return fused_point_cloud, features, None, scales, rots, opacities, scales_lang, rots_lang, opacities_lang
         else:
             return fused_point_cloud, features, scales, rots, opacities
 
     def extend_from_pcd(
-        self, fused_point_cloud, features, language_features, scales, rots, opacities, kf_id
+        self,
+        fused_point_cloud,
+        features,
+        language_features,
+        scales,
+        rots,
+        opacities,
+        scales_lang,
+        rots_lang,
+        opacities_lang,
+        kf_id,
     ):
         """
         Extend the model with new points from a point cloud.
-        
+
         Args:
             fused_point_cloud: Point positions
             features: Point appearance features
@@ -297,23 +321,20 @@ class GaussianModel:
         """
         # Create parameters from tensors
         new_xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
-        new_features_dc = nn.Parameter(
-            features[:, :, 0:1].transpose(1, 2).contiguous().requires_grad_(True)
-        )
-        new_features_rest = nn.Parameter(
-            features[:, :, 1:].transpose(1, 2).contiguous().requires_grad_(True)
-        )
-        
+        new_features_dc = nn.Parameter(features[:, :, 0:1].transpose(1, 2).contiguous().requires_grad_(True))
+        new_features_rest = nn.Parameter(features[:, :, 1:].transpose(1, 2).contiguous().requires_grad_(True))
+
         # Initialize language features if needed
         if self.is_language:
             language_features = torch.zeros(
-                (new_xyz.shape[0], self.config["language"]["lang_code_size"]), 
-                device="cuda"
+                (new_xyz.shape[0], self.config["language"]["lang_code_size"]), device="cuda"
             )
-            new_language_features = nn.Parameter(
-                language_features.contiguous().requires_grad_(True)
-            )
-            
+            new_language_features = nn.Parameter(language_features.contiguous().requires_grad_(True))
+
+            new_scales_lang = nn.Parameter(scales_lang.contiguous().requires_grad_(True))
+            new_rots_lang = nn.Parameter(rots_lang.contiguous().requires_grad_(True))
+            new_opacities_lang = nn.Parameter(opacities_lang.contiguous().requires_grad_(True))
+
         new_scaling = nn.Parameter(scales.requires_grad_(True))
         new_rotation = nn.Parameter(rots.requires_grad_(True))
         new_opacity = nn.Parameter(opacities.requires_grad_(True))
@@ -321,7 +342,7 @@ class GaussianModel:
         # Create tracking tensors for new points
         new_unique_kfIDs = torch.ones((new_xyz.shape[0])).int() * kf_id
         new_n_obs = torch.zeros((new_xyz.shape[0])).int()
-        
+
         # Add new points to the model
         if self.is_language:
             self.densification_postfix(
@@ -332,6 +353,9 @@ class GaussianModel:
                 new_opacity,
                 new_scaling,
                 new_rotation,
+                new_opacities_lang,
+                new_scales_lang,
+                new_rots_lang,
                 new_kf_ids=new_unique_kfIDs,
                 new_n_obs=new_n_obs,
             )
@@ -344,16 +368,17 @@ class GaussianModel:
                 new_opacity,
                 new_scaling,
                 new_rotation,
+                None,
+                None,
+                None,
                 new_kf_ids=new_unique_kfIDs,
                 new_n_obs=new_n_obs,
             )
 
-    def extend_from_pcd_seq(
-        self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None
-    ):
+    def extend_from_pcd_seq(self, cam_info, kf_id=-1, init=False, scale=2.0, depthmap=None):
         """
         Extend model from a new point cloud based on camera input.
-        
+
         Args:
             cam_info: Camera information
             kf_id: Keyframe ID
@@ -362,26 +387,39 @@ class GaussianModel:
             depthmap: Optional pre-computed depth map
         """
         if self.is_language:
-            fused_point_cloud, features, language_features, scales, rots, opacities = (
-                self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
-            )
+            (
+                fused_point_cloud,
+                features,
+                language_features,
+                scales,
+                rots,
+                opacities,
+                scales_lang,
+                rots_lang,
+                opacities_lang,
+            ) = self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
             self.extend_from_pcd(
-                fused_point_cloud, features, language_features, 
-                scales, rots, opacities, kf_id
+                fused_point_cloud,
+                features,
+                language_features,
+                scales,
+                rots,
+                opacities,
+                scales_lang,
+                rots_lang,
+                opacities_lang,
+                kf_id,
             )
         else:
-            fused_point_cloud, features, scales, rots, opacities = (
-                self.create_pcd_from_image(cam_info, init, scale=scale, depthmap=depthmap)
+            fused_point_cloud, features, scales, rots, opacities = self.create_pcd_from_image(
+                cam_info, init, scale=scale, depthmap=depthmap
             )
-            self.extend_from_pcd(
-                fused_point_cloud, features, None, 
-                scales, rots, opacities, kf_id
-            )
+            self.extend_from_pcd(fused_point_cloud, features, None, scales, rots, opacities, kf_id)
 
     def training_setup(self, training_args):
         """
         Set up the model for training.
-        
+
         Args:
             training_args: Training arguments
         """
@@ -422,7 +460,7 @@ class GaussianModel:
                 "name": "rotation",
             },
         ]
-        
+
         # Add language feature parameters if needed
         if self.is_language:
             lang_code_size = self.config["language"]["lang_code_size"]
@@ -435,10 +473,31 @@ class GaussianModel:
                     "name": "f_language",
                 }
             )
+            param_groups.append(
+                {
+                    "params": [self._opacity_lang],
+                    "lr": training_args.opacity_lr,
+                    "name": "opacity_lang",
+                }
+            )
+            param_groups.append(
+                {
+                    "params": [self._scaling_lang],
+                    "lr": training_args.scaling_lr * self.spatial_lr_scale / 5,
+                    "name": "scaling_lang",
+                }
+            )
+            param_groups.append(
+                {
+                    "params": [self._rotation_lang],
+                    "lr": training_args.rotation_lr,
+                    "name": "rotation_lang",
+                }
+            )
 
         # Create optimizer
         self.optimizer = torch.optim.Adam(param_groups, lr=0.0, eps=1e-15)
-        
+
         # Set up learning rate scheduler
         self.xyz_scheduler_args = get_expon_lr_func(
             lr_init=training_args.position_lr_init * self.spatial_lr_scale,
@@ -456,10 +515,10 @@ class GaussianModel:
     def update_learning_rate(self, iteration):
         """
         Update learning rate based on iteration.
-        
+
         Args:
             iteration: Current iteration number
-            
+
         Returns:
             Current learning rate
         """
@@ -478,38 +537,43 @@ class GaussianModel:
     def construct_list_of_attributes(self):
         """
         Construct a list of attribute names for PLY export.
-        
+
         Returns:
             List of attribute names
         """
         attr_list = ["x", "y", "z", "nx", "ny", "nz"]
-        
+
         # Add DC feature attributes
         for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
             attr_list.append(f"f_dc_{i}")
-            
+
         # Add rest feature attributes
         for i in range(self._features_rest.shape[1] * self._features_rest.shape[2]):
             attr_list.append(f"f_rest_{i}")
-            
+
         # Add language feature attributes if present
         if self.is_language:
             for i in range(self._language_feature.shape[1]):
                 attr_list.append(f"f_language_{i}")
-                
+            attr_list.append("lang_opacity")
+            for i in range(self._scaling_lang.shape[1]):
+                attr_list.append("lang_scale_{}".format(i))
+            for i in range(self._rotation_lang.shape[1]):
+                attr_list.append("lang_rot_{}".format(i))
+
         # Add remaining attributes
         attr_list.append("opacity")
         for i in range(self._scaling.shape[1]):
             attr_list.append(f"scale_{i}")
         for i in range(self._rotation.shape[1]):
             attr_list.append(f"rot_{i}")
-            
+
         return attr_list
 
     def save_ply(self, path):
         """
         Save the model to a PLY file.
-        
+
         Args:
             path: Output file path
         """
@@ -518,45 +582,41 @@ class GaussianModel:
         # Collect all tensor data
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
-        f_dc = (
-            self._features_dc.detach()
-            .transpose(1, 2)
-            .flatten(start_dim=1)
-            .contiguous()
-            .cpu()
-            .numpy()
-        )
-        f_rest = (
-            self._features_rest.detach()
-            .transpose(1, 2)
-            .flatten(start_dim=1)
-            .contiguous()
-            .cpu()
-            .numpy()
-        )
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
 
         # Create attribute array
-        dtype_full = [
-            (attribute, "f4") for attribute in self.construct_list_of_attributes()
-        ]
+        dtype_full = [(attribute, "f4") for attribute in self.construct_list_of_attributes()]
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        
+
         # Combine all attributes
         if self.is_language:
             f_language = self._language_feature.detach().cpu().numpy()
+            lang_opacities = self._opacity_lang.detach().cpu().numpy()
+            lang_scale = self._scaling_lang.detach().cpu().numpy()
+            lang_rotation = self._rotation_lang.detach().cpu().numpy()
             attributes = np.concatenate(
-                (xyz, normals, f_dc, f_rest, f_language, opacities, scale, rotation),
+                (
+                    xyz,
+                    normals,
+                    f_dc,
+                    f_rest,
+                    f_language,
+                    lang_opacities,
+                    lang_scale,
+                    lang_rotation,
+                    opacities,
+                    scale,
+                    rotation,
+                ),
                 axis=1,
             )
         else:
-            attributes = np.concatenate(
-                (xyz, normals, f_dc, f_rest, opacities, scale, rotation), 
-                axis=1
-            )
-            
+            attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+
         # Create PLY file
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, "vertex")
@@ -568,10 +628,15 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
+    def reset_opacity_lang(self):
+        opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity_lang) * 0.01)
+        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity_lang")
+        self._opacity_lang = optimizable_tensors["opacity_lang"]
+
     def reset_opacity_nonvisible(self, visibility_filters):
         """
         Reset opacity for only non-visible gaussians.
-        
+
         Args:
             visibility_filters: List of visibility filters
         """
@@ -582,10 +647,24 @@ class GaussianModel:
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
+    def reset_opacity_nonvisible_lang(self, visibility_filters):  ##Reset opacity for only non-visible gaussians
+        """
+        Reset opacity for only non-visible gaussians.
+
+        Args:
+            visibility_filters: List of visibility filters
+        """
+        opacities_new = inverse_sigmoid(torch.ones_like(self.get_opacity_lang) * 0.4)
+
+        for filter in visibility_filters:
+            opacities_new[filter] = self.get_opacity_lang[filter]
+        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity_lang")
+        self._opacity_lang = optimizable_tensors["opacity_lang"]
+
     def load_ply(self, path):
         """
         Load model from a PLY file.
-        
+
         Args:
             path: Input file path
         """
@@ -601,7 +680,7 @@ class GaussianModel:
             return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
         self.ply_input = fetchPly_nocolor(path)
-        
+
         # Load position data
         xyz = np.stack(
             (
@@ -612,6 +691,8 @@ class GaussianModel:
             axis=1,
         )
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+        if self.is_language:
+            lang_opacities = np.asarray(plydata.elements[0]["lang_opacity"])[..., np.newaxis]
 
         # Load feature data
         features_dc = np.zeros((xyz.shape[0], 3, 1))
@@ -620,46 +701,53 @@ class GaussianModel:
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
 
         # Find and load rest features
-        extra_f_names = [
-            p.name
-            for p in plydata.elements[0].properties
-            if p.name.startswith("f_rest_")
-        ]
+        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
         extra_f_names = sorted(extra_f_names, key=lambda x: int(x.split("_")[-1]))
         assert len(extra_f_names) == 3 * (self.max_sh_degree + 1) ** 2 - 3
-        
+
         features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
         for idx, attr_name in enumerate(extra_f_names):
             features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
-            
+
         # Reshape features
-        features_extra = features_extra.reshape(
-            (features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1)
-        )
+        features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1))
 
         # Load scale and rotation data
-        scale_names = [
-            p.name
-            for p in plydata.elements[0].properties
-            if p.name.startswith("scale_")
-        ]
+        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
         scale_names = sorted(scale_names, key=lambda x: int(x.split("_")[-1]))
         scales = np.zeros((xyz.shape[0], len(scale_names)))
         for idx, attr_name in enumerate(scale_names):
             scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
-        rot_names = [
-            p.name for p in plydata.elements[0].properties if p.name.startswith("rot")
-        ]
+        if self.is_language:
+            lang_scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("lang_scale_")]
+            lang_scale_names = sorted(lang_scale_names, key=lambda x: int(x.split("_")[-1]))
+            lang_scales = np.zeros((xyz.shape[0], len(lang_scale_names)))
+            for idx, attr_name in enumerate(lang_scale_names):
+                lang_scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
         rot_names = sorted(rot_names, key=lambda x: int(x.split("_")[-1]))
         rots = np.zeros((xyz.shape[0], len(rot_names)))
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
+        if self.is_language:
+            lang_rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("lang_rot")]
+            lang_rot_names = sorted(lang_rot_names, key=lambda x: int(x.split("_")[-1]))
+            lang_rots = np.zeros((xyz.shape[0], len(lang_rot_names)))
+            for idx, attr_name in enumerate(lang_rot_names):
+                lang_rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        if self.is_language:
+            f_language_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_language")]
+            f_language_names = sorted(f_language_names, key=lambda x: int(x.split("_")[-1]))
+            f_language = np.zeros((xyz.shape[0], len(f_language_names)))
+            for idx, attr_name in enumerate(f_language_names):
+                f_language[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
         # Create model parameters
-        self._xyz = nn.Parameter(
-            torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True)
-        )
+        self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         self._features_dc = nn.Parameter(
             torch.tensor(features_dc, dtype=torch.float, device="cuda")
             .transpose(1, 2)
@@ -672,30 +760,39 @@ class GaussianModel:
             .contiguous()
             .requires_grad_(True)
         )
-        self._opacity = nn.Parameter(
-            torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True)
-        )
-        self._scaling = nn.Parameter(
-            torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True)
-        )
-        self._rotation = nn.Parameter(
-            torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True)
-        )
-        
+        self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        if self.is_language:
+            print(f"Loading language features from {path}")
+            self._opacity_lang = nn.Parameter(
+                torch.tensor(lang_opacities, dtype=torch.float, device="cuda").requires_grad_(True)
+            )
+            self._scaling_lang = nn.Parameter(
+                torch.tensor(lang_scales, dtype=torch.float, device="cuda").requires_grad_(True)
+            )
+            self._rotation_lang = nn.Parameter(
+                torch.tensor(lang_rots, dtype=torch.float, device="cuda").requires_grad_(True)
+            )
+            self._language_feature = nn.Parameter(
+                torch.tensor(f_language, dtype=torch.float, device="cuda").requires_grad_(True)
+            )
+
         # Initialize tracking tensors
         self.active_sh_degree = self.max_sh_degree
         self.max_radii2D = torch.zeros((self._xyz.shape[0]), device="cuda")
+        self.max_radii2D_lang = torch.zeros((self._xyz.shape[0]), device="cuda")
         self.unique_kfIDs = torch.zeros((self._xyz.shape[0]))
         self.n_obs = torch.zeros((self._xyz.shape[0]), device="cpu").int()
 
     def replace_tensor_to_optimizer(self, tensor, name):
         """
         Replace a tensor in the optimizer.
-        
+
         Args:
             tensor: New tensor
             name: Parameter name
-            
+
         Returns:
             Dictionary of updated tensors
         """
@@ -718,10 +815,10 @@ class GaussianModel:
     def _prune_optimizer(self, mask):
         """
         Prune optimizer parameters based on mask.
-        
+
         Args:
             mask: Boolean mask for points to keep
-            
+
         Returns:
             Dictionary of updated tensors
         """
@@ -735,23 +832,19 @@ class GaussianModel:
 
                 # Replace parameter
                 del self.optimizer.state[group["params"][0]]
-                group["params"][0] = nn.Parameter(
-                    (group["params"][0][mask].requires_grad_(True))
-                )
+                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
                 self.optimizer.state[group["params"][0]] = stored_state
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
                 # Just update parameter without optimizer state
-                group["params"][0] = nn.Parameter(
-                    group["params"][0][mask].requires_grad_(True)
-                )
+                group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
     def prune_points(self, mask):
         """
         Remove points based on mask.
-        
+
         Args:
             mask: Boolean mask for points to remove
         """
@@ -765,6 +858,10 @@ class GaussianModel:
         self._features_rest = optimizable_tensors["f_rest"]
         if self.is_language:
             self._language_feature = optimizable_tensors["f_language"]
+            self._opacity_lang = optimizable_tensors["opacity_lang"]
+            self._scaling_lang = optimizable_tensors["scaling_lang"]
+            self._rotation_lang = optimizable_tensors["rotation_lang"]
+
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
@@ -773,6 +870,7 @@ class GaussianModel:
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
+        self.max_radii2D_lang = self.max_radii2D_lang[valid_points_mask]
         self.unique_kfIDs = self.unique_kfIDs[valid_points_mask.cpu()]
         self.n_obs = self.n_obs[valid_points_mask.cpu()]
 
@@ -793,18 +891,14 @@ class GaussianModel:
 
                 del self.optimizer.state[group["params"][0]]
                 group["params"][0] = nn.Parameter(
-                    torch.cat(
-                        (group["params"][0], extension_tensor), dim=0
-                    ).requires_grad_(True)
+                    torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True)
                 )
                 self.optimizer.state[group["params"][0]] = stored_state
 
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
                 group["params"][0] = nn.Parameter(
-                    torch.cat(
-                        (group["params"][0], extension_tensor), dim=0
-                    ).requires_grad_(True)
+                    torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True)
                 )
                 optimizable_tensors[group["name"]] = group["params"][0]
 
@@ -819,6 +913,9 @@ class GaussianModel:
         new_opacities,
         new_scaling,
         new_rotation,
+        new_opacities_lang,
+        new_scaling_lang,
+        new_rotation_lang,
         new_kf_ids=None,
         new_n_obs=None,
     ):
@@ -833,13 +930,23 @@ class GaussianModel:
 
         if self.is_language:
             d.update({"f_language": new_language_features})
-
+            d.update(
+                {
+                    "opacity_lang": new_opacities_lang,
+                    "scaling_lang": new_scaling_lang,
+                    "rotation_lang": new_rotation_lang,
+                }
+            )
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
         self._xyz = optimizable_tensors["xyz"]
         self._features_dc = optimizable_tensors["f_dc"]
         self._features_rest = optimizable_tensors["f_rest"]
         if self.is_language:
             self._language_feature = optimizable_tensors["f_language"]
+            self._opacity_lang = optimizable_tensors["opacity_lang"]
+            self._scaling_lang = optimizable_tensors["scaling_lang"]
+            self._rotation_lang = optimizable_tensors["rotation_lang"]
+
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
@@ -847,6 +954,8 @@ class GaussianModel:
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        self.max_radii2D_lang = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
         if new_kf_ids is not None:
             self.unique_kfIDs = torch.cat((self.unique_kfIDs, new_kf_ids)).int()
         if new_n_obs is not None:
@@ -860,29 +969,29 @@ class GaussianModel:
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(
             selected_pts_mask,
-            torch.max(self.get_scaling, dim=1).values
-            > self.percent_dense * scene_extent,
+            torch.max(self.get_scaling, dim=1).values > self.percent_dense * scene_extent,
         )
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
         means = torch.zeros((stds.size(0), 3), device="cuda")
         samples = torch.normal(mean=means, std=stds)
         rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
-        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[
-            selected_pts_mask
-        ].repeat(N, 1)
-        new_scaling = self.scaling_inverse_activation(
-            self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N)
-        )
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
         new_rotation = self._rotation[selected_pts_mask].repeat(N, 1)
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N, 1, 1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N, 1, 1)
-        
+
         if self.is_language:
             new_language_features = self._language_feature[selected_pts_mask].repeat(N, 1)
+            new_scaling_lang = self.scaling_inverse_activation(
+                self.get_scaling_lang[selected_pts_mask].repeat(N, 1) / (0.8 * N)
+            )
+            new_rotation_lang = self._rotation_lang[selected_pts_mask].repeat(N, 1)
+            new_opacity_lang = self._opacity_lang[selected_pts_mask].repeat(N, 1)
         else:
             new_language_features = None
-        
+
         new_opacity = self._opacity[selected_pts_mask].repeat(N, 1)
 
         new_kf_id = self.unique_kfIDs[selected_pts_mask.cpu()].repeat(N)
@@ -896,6 +1005,9 @@ class GaussianModel:
             new_opacity,
             new_scaling,
             new_rotation,
+            new_opacity_lang,
+            new_scaling_lang,
+            new_rotation_lang,
             new_kf_ids=new_kf_id,
             new_n_obs=new_n_obs,
         )
@@ -911,13 +1023,14 @@ class GaussianModel:
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
-        selected_pts_mask = torch.where(
-            torch.norm(grads, dim=-1) >= grad_threshold, True, False
+        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
+        selected_pts_mask = torch.logical_and(
+            selected_pts_mask,
+            torch.max(self.get_scaling, dim=1).values <= self.percent_dense * scene_extent,
         )
         selected_pts_mask = torch.logical_and(
             selected_pts_mask,
-            torch.max(self.get_scaling, dim=1).values
-            <= self.percent_dense * scene_extent,
+            torch.max(self.get_scaling_lang, dim=1).values <= self.percent_dense * scene_extent,
         )
 
         new_xyz = self._xyz[selected_pts_mask]
@@ -925,6 +1038,9 @@ class GaussianModel:
         new_features_rest = self._features_rest[selected_pts_mask]
         if self.is_language:
             new_language_features = self._language_feature[selected_pts_mask]
+            new_opacities_lang = self._opacity_lang[selected_pts_mask]
+            new_scaling_lang = self._scaling_lang[selected_pts_mask]
+            new_rotation_lang = self._rotation_lang[selected_pts_mask]
         else:
             new_language_features = None
         new_opacities = self._opacity[selected_pts_mask]
@@ -941,6 +1057,9 @@ class GaussianModel:
             new_opacities,
             new_scaling,
             new_rotation,
+            new_opacities_lang,
+            new_scaling_lang,
+            new_rotation_lang,
             new_kf_ids=new_kf_id,
             new_n_obs=new_n_obs,
         )
@@ -952,13 +1071,18 @@ class GaussianModel:
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
 
-        prune_mask = (self.get_opacity < min_opacity).squeeze()
+        prune_mask = (torch.logical_and(self.get_opacity < min_opacity, self.get_opacity_lang < min_opacity)).squeeze()
         if max_screen_size:
             big_points_vs = self.max_radii2D > max_screen_size
+            big_points_vs_lang = self.max_radii2D_lang > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            big_points_ws_lang = self.get_scaling_lang.max(dim=1).values > 0.1 * extent
 
             prune_mask = torch.logical_or(
-                torch.logical_or(prune_mask, big_points_vs), big_points_ws
+                torch.logical_or(
+                    torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws), big_points_ws_lang
+                ),
+                big_points_vs_lang,
             )
         self.prune_points(prune_mask)
 

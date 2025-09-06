@@ -22,6 +22,7 @@ from gaussian_splatting.scene.gaussian_model import GaussianModel
 from gaussian_splatting.utils.sh_utils import eval_sh
 from utils.camera_utils import Camera
 
+
 def render(
     viewpoint_camera,
     pc,
@@ -57,6 +58,7 @@ def render(
             mask,
         )
 
+
 def _render(
     viewpoint_camera,
     pc,
@@ -76,17 +78,12 @@ def _render(
         return None
 
     # Create zero tensor for gradient computation in screen space
-    screenspace_points = torch.zeros_like(
-        pc.get_xyz, 
-        dtype=pc.get_xyz.dtype, 
-        requires_grad=True, 
-        device="cuda"
-    )
+    screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda")
     try:
         screenspace_points.retain_grad()
     except Exception:
         pass
-    
+
     # Set up camera parameters for rasterization
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
@@ -120,7 +117,7 @@ def _render(
     scales = None
     rotations = None
     cov3D_precomp = None
-    
+
     if pipe.compute_cov3D_python:
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
@@ -130,20 +127,16 @@ def _render(
         else:
             scales = pc.get_scaling
         rotations = pc.get_rotation
-    
+
     # Prepare colors from spherical harmonics or precomputed values
     shs = None
     colors_precomp = None
-    
+
     if colors_precomp is None:
         if pipe.convert_SHs_python:
             # Precompute colors from spherical harmonics
-            shs_view = pc.get_features.transpose(1, 2).view(
-                -1, 3, (pc.max_sh_degree + 1) ** 2
-            )
-            dir_pp = pc.get_xyz - viewpoint_camera.camera_center.repeat(
-                pc.get_features.shape[0], 1
-            )
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
+            dir_pp = pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1)
             dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
@@ -192,6 +185,7 @@ def _render(
         "n_touched": n_touched,
     }
 
+
 def _language_render(
     viewpoint_camera,
     pc,
@@ -203,20 +197,15 @@ def _language_render(
 ):
     """
     Render language-conditioned Gaussians.
-    
+
     Background tensor (bg_color) must be on GPU!
     """
     # Handle empty model case
     if pc.get_xyz.shape[0] == 0:
         return None
-    
+
     # Create zero tensor for gradient computation in screen space
-    screenspace_points = torch.zeros_like(
-        pc.get_xyz, 
-        dtype=pc.get_xyz.dtype, 
-        requires_grad=True, 
-        device="cuda"
-    )
+    screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda")
     try:
         screenspace_points.retain_grad()
     except Exception:
@@ -250,14 +239,19 @@ def _language_render(
     means3D = pc.get_xyz
     means2D = screenspace_points
     opacity = pc.get_opacity
+    opacity_lang = pc.get_opacity_lang
 
     # Prepare scales, rotations and covariance
     scales = None
+    scales_lang = None
     rotations = None
+    rotations_lang = None
     cov3D_precomp = None
-    
+    cov3D_precomp_lang = None
+
     if pipe.compute_cov3D_python:
         cov3D_precomp = pc.get_covariance(scaling_modifier)
+        cov3D_precomp_lang = pc.get_covariance_lang(scaling_modifier)
     else:
         # Handle isotropic vs anisotropic scaling
         if pc.get_scaling.shape[-1] == 1:
@@ -265,20 +259,22 @@ def _language_render(
         else:
             scales = pc.get_scaling
         rotations = pc.get_rotation
-    
+
+        if pc.get_scaling_lang.shape[-1] == 1:
+            scales_lang = pc.get_scaling_lang.repeat(1, 3)
+        else:
+            scales_lang = pc.get_scaling_lang
+        rotations_lang = pc.get_rotation_lang
+
     # Prepare colors from spherical harmonics or precomputed values
     shs = None
     colors_precomp = None
-    
+
     if colors_precomp is None:
         if pipe.convert_SHs_python:
             # Precompute colors from spherical harmonics
-            shs_view = pc.get_features.transpose(1, 2).view(
-                -1, 3, (pc.max_sh_degree + 1) ** 2
-            )
-            dir_pp = pc.get_xyz - viewpoint_camera.camera_center.repeat(
-                pc.get_features.shape[0], 1
-            )
+            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree + 1) ** 2)
+            dir_pp = pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1)
             dir_pp_normalized = dir_pp / dir_pp.norm(dim=1, keepdim=True)
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
@@ -286,18 +282,22 @@ def _language_render(
             shs = pc.get_features
     else:
         colors_precomp = override_color
-    
+
     # Get language features
     language_precomp = pc.get_language_features
-    
+
     # Apply mask if provided
     if mask is not None:
         (
             rendered_image,
             language,
             radii,
+            radii_lang,
             depth,
             opacity,
+            opacity_lang,
+            n_touched,
+            n_touched_lang,
         ) = rasterizer(
             means3D=means3D[mask],
             means2D=means2D[mask],
@@ -317,9 +317,12 @@ def _language_render(
             rendered_image,
             language,
             radii,
+            radii_lang,
             depth,
             opacity,
+            opacity_lang,
             n_touched,
+            n_touched_lang,
         ) = rasterizer(
             means3D=means3D,
             means2D=means2D,
@@ -327,9 +330,13 @@ def _language_render(
             colors_precomp=colors_precomp,
             language_precomp=language_precomp,
             opacities=opacity,
+            opacities_lang=opacity_lang,
             scales=scales,
+            scales_lang=scales_lang,
             rotations=rotations,
+            rotations_lang=rotations_lang,
             cov3D_precomp=cov3D_precomp,
+            cov3D_precomp_lang=cov3D_precomp_lang,
             theta=viewpoint_camera.cam_rot_delta,
             rho=viewpoint_camera.cam_trans_delta,
         )
@@ -341,7 +348,12 @@ def _language_render(
         "viewspace_points": screenspace_points,
         "visibility_filter": radii > 0,
         "radii": radii,
+        "radii_lang": radii_lang,
         "depth": depth,
         "opacity": opacity,
+        "opacity_lang": opacity_lang,
+        "scale": pc.get_scaling,
+        "scale_lang": pc.get_scaling_lang,
         "n_touched": n_touched,
+        "n_touched_lang": n_touched_lang,
     }

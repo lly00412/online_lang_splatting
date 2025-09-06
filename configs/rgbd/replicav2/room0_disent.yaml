@@ -1,0 +1,21 @@
+inherit_from: "configs/rgbd/replicav2/base_config.yaml"
+Dataset:
+  dataset_path: <YOUR_DATASET_PATH>
+  single_thread: False
+Results:
+  use_gui: True # True: will open an GUI
+Training:
+  kf_interval: 4
+  mapping_itr_num: 150
+  gaussian_update_every: 150
+  gaussian_update_offset: 50
+  gaussian_reset: 2001
+  size_threshold: 20
+  use_gt_pose: False
+language:
+  labels_from_file: False # if True, will load labels from a file (can be low res or high res langsplat labels) instead of running online language model
+  language_train: True # if True, will train for the language
+  single_stage_ae: True # if True, will use cross-data ae (pretrained on cross-data of replica), if false will use a 2-stage ae
+  hr_model: True
+  lang_code_size: 3
+  auto_ckpt_path: "<YOUR_PRETRAINED_MODEL_PATH>/single_stage_AE_disent.pth"

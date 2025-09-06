@@ -49,19 +49,11 @@ class Camera(nn.Module):
         self.image_height = image_height
         self.image_width = image_width
 
-        self.cam_rot_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
-        self.cam_trans_delta = nn.Parameter(
-            torch.zeros(3, requires_grad=True, device=device)
-        )
+        self.cam_rot_delta = nn.Parameter(torch.zeros(3, requires_grad=True, device=device))
+        self.cam_trans_delta = nn.Parameter(torch.zeros(3, requires_grad=True, device=device))
 
-        self.exposure_a = nn.Parameter(
-            torch.tensor([0.0], requires_grad=True, device=device)
-        )
-        self.exposure_b = nn.Parameter(
-            torch.tensor([0.0], requires_grad=True, device=device)
-        )
+        self.exposure_a = nn.Parameter(torch.tensor([0.0], requires_grad=True, device=device))
+        self.exposure_b = nn.Parameter(torch.tensor([0.0], requires_grad=True, device=device))
 
         self.projection_matrix = projection_matrix.to(device=device)
         self.gt_lang_feat = gt_lang_feat
@@ -96,9 +88,7 @@ class Camera(nn.Module):
         projection_matrix = getProjectionMatrix2(
             znear=0.01, zfar=100.0, fx=fx, fy=fy, cx=cx, cy=cy, W=W, H=H
         ).transpose(0, 1)
-        return Camera(
-            uid, None, None, T, projection_matrix, fx, fy, cx, cy, FoVx, FoVy, H, W
-        )
+        return Camera(uid, None, None, T, projection_matrix, fx, fy, cx, cy, FoVx, FoVy, H, W)
 
     @property
     def world_view_transform(self):
@@ -106,11 +96,7 @@ class Camera(nn.Module):
 
     @property
     def full_proj_transform(self):
-        return (
-            self.world_view_transform.unsqueeze(0).bmm(
-                self.projection_matrix.unsqueeze(0)
-            )
-        ).squeeze(0)
+        return (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
 
     @property
     def camera_center(self):
@@ -147,9 +133,7 @@ class Camera(nn.Module):
             self.grad_mask = img_grad_intensity
         else:
             median_img_grad_intensity = img_grad_intensity.median()
-            self.grad_mask = (
-                img_grad_intensity > median_img_grad_intensity * edge_threshold
-            )
+            self.grad_mask = img_grad_intensity > median_img_grad_intensity * edge_threshold
 
     def clean(self):
         self.original_image = None
