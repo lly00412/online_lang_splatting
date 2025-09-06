@@ -30,7 +30,7 @@
 
 ### Update:
 
-We add running RGBL-disentanglement in the "lang_disent" branch. See the following sections for instructions.
+We add running RGBL-disentanglement in the "lang_disent" branch. See the following section for instructions.
 
 ## 🚀 Getting Started
 
@@ -81,19 +81,25 @@ python create_lang_model.py --config language/configs/convnextL_768.yaml
 
 # 🧠 Language Features Demo
 
-Downlod the pre-trained weights. We use omni_general indoor trained weights
+Downlod the pre-trained weights (HuggingFace link at the top), and place the models under "pretrained_models". We use omni_general indoor trained weights
 
 To test language feature on your own image, run
 
 ```bash
-python3 language/language_features.py --high-res-model "high_res_71_indoor.ckpt" --lang-model "seg_clip_model_l.pth" --input "sample/replica_room0.jpg" --query-text "vase"
+python3 language/language_features.py --high-res-model "pretrained_models/omni_general/high_res_71_indoor.ckpt" --lang-model "seg_clip_model_l.pth" --input "sample/replica_room0.jpg" --query-text "vase"
 ```
+
+This will show up the feature map and heatmap for localization.
 
 # 🧭 Running the Pipeline
 
-Edit base_config.yaml file to load `auto_ckpt_path` to load generalized autoencoder. `lang_model_path` to point to the language feature map model weights and `hr_ckpt_path` to point to the high resolution module weights.
+Edit paths in config/rgbd/replicav2/base_config.yaml.
 
-for room0.yaml edit `dataset_path` to point to the room0 dataset and `online_ckpt_path` to where you want the checkpoint to be saved.
+- `auto_ckpt_path` to load generalized autoencoder;
+- `lang_model_path` to point to the language model weights (e.g., seg_clip_model_l.pth from the last step).
+- `hr_ckpt_path` to point to the high resolution module weights.
+
+for room0.yaml edit `dataset_path` to point to the room0 dataset and `online_ckpt_path` to where you want the online AE checkpoint in 2-stage pipeline to be saved.
 
 ### To Run ▶️ 2-Stage Pipeline
 
@@ -125,7 +131,7 @@ The weights are in the pretrained weights folder. Use appropriate weights
 python3 slam.py --config configs/rgbd/replicav2/room0.yaml
 ```
 
-## Run RGBL-disentanglement
+# 🏹 Run RGBL-disentanglement
 
 0.
 
