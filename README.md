@@ -133,7 +133,6 @@ python3 slam.py --config configs/rgbd/replicav2/room0.yaml
 
 # 🏹 Run RGBL-disentanglement
 
-0.
 
 ```bash
 git checkout lang_disent
