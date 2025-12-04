@@ -167,8 +167,14 @@ A GUI window will pop up and show the SLAM results
 
 🔖 Create Labels
 
+After runnin our training script (or LangSplat's training), our results are saved in a structure like <result_sequence>/psnr/before_opt/
+
+The following script first convert the Replica's segmentation map to json. See the argument help in create_replica_labels.py.
+
+It will save json under our_result_dir/gt/label or langsplat_result_dir/gt/label.
+
 ```bash
-python3 eval/create_replica_labels.py
+python3 eval/create_replica_labels.py --langslam_dir <our_result_dir> --langsplat_dir <langsplat_result_dir> --seg_file_config <path_to_render_config.yaml_of_a_seq>
 ```
 
 ## ✅ Evaluate 2-Stage Pipeline
@@ -176,7 +182,7 @@ python3 eval/create_replica_labels.py
 To evaluate 2 stage
 
 ```bash
-python3 eval/evaluate_onlinelangslam.py
+python3 eval/evaluate_onlinelangslam.py --dataset_name <room0, room1, ...> --root_dir <our_result_dir> --ae_ckpt_dir <generalized_ae_path> --online_ae_ckpt <online_ae_path>
 ```
 
 ## ✅ Evaluate 1-Stage Pipeline
@@ -184,7 +190,7 @@ python3 eval/evaluate_onlinelangslam.py
 To evaluate cross data genenarizable
 
 ```bash
-python3 eval/evaluate_langslam.py
+python3 eval/evaluate_langslam.py --dataset_name <room0, room1, ...> --root_dir <our_result_dir> --ae_ckpt_dir <generalized_ae_path> --online_ae_ckpt <online_ae_path>
 ```
 
 ## 🧱 3D Evaluation
