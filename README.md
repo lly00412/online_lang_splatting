@@ -14,10 +14,10 @@
 
 </div>
 
-**Online Language Splatting**
+- Dense and sharp CLIP embedding (192x192x768) beyond real-time speed, e.g., >40 FPS.
+- A **fully online system** that seamlessly integrates dense CLIP features with Gaussian Splatting.
+- Provide **physical memory** for real-time **human–machine interaction**.
 
-- Introduces a **fully online system** that seamlessly integrates dense CLIP features with Gaussian Splatting.
-- Provides a potential form of **physical memory** for real-time **human–machine interaction** and **world modeling**.
 
 <div align="center">
 
@@ -35,12 +35,6 @@
 </table>
 </div>
 
----
-
-## 🔔 Highlights
-
-- Our method realizes Gaussian Splatting and open-vocabulary-preserving language mapping simultenuously in an online SLAM framework.
-- This release include both the integrated framework, and the plug-in-and-play pretrained network modules producing dense and sharp CLIP maps (192x192x768) beyond real-time speed, e.g., >40 FPS.
 
 ---
 
