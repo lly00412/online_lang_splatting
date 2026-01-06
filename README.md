@@ -91,7 +91,10 @@ python create_lang_model.py --config language/configs/convnextL_768.yaml
 
 # 🧠 Language Features Demo
 
-Downlod the pre-trained weights (HuggingFace link at the top), and place the models under "pretrained_models". We use omni_general indoor trained weights
+Downlod the pre-trained weights (HuggingFace link at the top), and place the models under "pretrained_models". We use omni_general indoor trained weights. You can download (if not already) using the following command:
+```
+hf download slamDev/OnlineLanguageSplatting --repo-type=dataset
+```
 
 To test language feature on your own image, run
 
@@ -137,6 +140,8 @@ We use a 4-split strategy for training:
 The weights are in the pretrained weights folder. Use appropriate weights
 **Example**: For evaluating on `room0` and `office0`, use weights from **Run 1**.
 
+Note: Edit the paths in base_config.yaml to specifiy autoencoder path and save dir path respectively. 
+
 ```bash
 python3 slam.py --config configs/rgbd/replicav2/room0.yaml
 ```
@@ -179,12 +184,12 @@ A GUI window will pop up and show the SLAM results
 
 After runnin our training script (or LangSplat's training), our results are saved in a structure like <result_sequence>/psnr/before_opt/
 
-The following script first convert VMAP's prepared Replica's segmentation maps to json format. See the argument help in create_replica_labels.py.
+The following script first convert VMAP's prepared Replica's segmentation maps to json format. See the argument help in create_replica_labels.py --help.
 
 It will save json under our_result_dir/gt/label or langsplat_result_dir/gt/label.
 
 ```bash
-python3 eval/create_replica_labels.py --langslam_dir <our_result_dir> --langsplat_dir <langsplat_result_dir> --seg_file_config <path_to_render_config.yaml_of_a_seq>
+python3 eval/create_replica_labels.py --langslam_dir <our_result_dir/psnr/before_opt> --langsplat_dir (optional) <langsplat_result_dir> --seg_file_config <path_to_render_config.yaml_of_a_seq>
 ```
 
 ## ✅ Evaluate 2-Stage Pipeline
@@ -200,7 +205,7 @@ python3 eval/evaluate_onlinelangslam.py --dataset_name <room0, room1, ...> --roo
 To evaluate cross data genenarizable
 
 ```bash
-python3 eval/evaluate_langslam.py --dataset_name <room0, room1, ...> --root_dir <our_result_dir> --ae_ckpt_dir <generalized_ae_path> --online_ae_ckpt <online_ae_path>
+python3 eval/evaluate_langslam.py --dataset_name <room0, room1, ...> --root_dir <our_result_dir> --ae_ckpt_dir <pretrained_single_stage_ae_path (see pretrained weights folder)> 
 ```
 
 ## 🧱 3D Evaluation

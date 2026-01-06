@@ -70,7 +70,7 @@ def save_annotations_to_json(info, annotations, json_file):
 
 def load_labels(seg_file):
     with open(seg_file, 'r') as f:
-        seg_config = yaml.safe_load(f)
+        seg_config = yaml.load(f, Loader=yaml.UnsafeLoader)
 
     # Extract the name for each id
     id_to_name = {item['id']: item['name'] for item in seg_config['classes']}
@@ -135,5 +135,5 @@ def save_json_labels(seg_file, seg_label, output_json, img_name, img_idx, user_l
     return True
     
 # if __name__ == "__main__":
-#     print(get_top_labels("/media/sai/External HDD/sai/datasets/langslam/vmap/room_2/imap/00/semantic_config.yaml",
-#                    "/media/sai/External HDD/sai/datasets/langslam/vmap/room_2/imap/00/semantic_class"))
+#     print(get_top_labels("/media/saimouli/Data6T1/datasets/room0_small/imap/render_config.yaml",
+#                    "/media/saimouli/Data6T1/datasets/room0_small/imap/semantic_class"))

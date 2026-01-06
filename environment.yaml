@@ -1,15 +1,19 @@
 name: LangGS
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - cudatoolkit=11.8
-  - plyfile=0.8.1
   - python=3.8.19
-  - pip=22.3.1
+  - cudatoolkit=11.8
   - pytorch=1.13.0
   - torchvision=0.14.0
+  - plyfile=0.8.1
   - tqdm
+  - pip=22.3.1
+
+  - libstdcxx-ng>=13
+  - libgcc-ng>=13
+  - icu>=78
+
   - pip:
     - submodules/simple-knn
     - submodules/diff-gaussian-rasterization
@@ -24,7 +28,6 @@ dependencies:
     - PyOpenGL
     - pytorch_lightning==1.9.0
     - pydantic==1.10.18
-    - lightning==1.9.0
     - glfw
     - fastapi==0.88.0
     - PyGLM

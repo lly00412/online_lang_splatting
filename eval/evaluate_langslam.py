@@ -397,7 +397,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--root_dir",
         type=str,
-        default="/media/room_0/2025-03-23-12-56-41/psnr/before_opt",
+        #default="/media/saimouli/Data6T1/datasets/room0_small/omni_data_result/datasets/2026-01-06-14-42-47/psnr/before_opt",
         help="Root folder containing the langslam results",
     )
     parser.add_argument("--label_name", type=str, default="label", help="label name to evaluate")
@@ -424,7 +424,7 @@ if __name__ == "__main__":
     feat_dir = [os.path.join(args.root_dir, "lang")]
 
     # Labels created from the create_replica_labels.py
-    label_folder = os.path.join(args.root_dir, "gt", args.label_name)
+    label_folder = os.path.join(args.root_dir, args.label_name)
     output_folder = os.path.join(args.root_dir, "eval_results")
 
     dataset_name = args.dataset_name
