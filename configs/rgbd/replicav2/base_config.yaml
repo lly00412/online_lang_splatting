@@ -63,7 +63,7 @@ language:
   labels_from_file: False
   language_train: False
   auto_ckpt_path: "/mnt/Data2/liyan/online_lang_splatting/data/OnlineLanguageSplatting/Pretrained_models/omni_general/ae_149_he.ckpt" #/media/sai/External HDD/sai/datasets/langslam/Replica/weights/version_5_code32/epoch=127-step=17536.ckpt"
-  lang_model_path: "/mnt/Data2/liyan/online_lang_splatting/data/OnlineLanguageSplatting/sed_model_large.pth"
+  lang_model_path: "/mnt/Data2/liyan/online_lang_splatting/data/seg_clip_model_l.pth"
   lang_label_path: ""
   hr_ckpt_path: "/mnt/Data2/liyan/online_lang_splatting/data/OnlineLanguageSplatting/Pretrained_models/omni_general/high_res_71_indoor.ckpt"
 

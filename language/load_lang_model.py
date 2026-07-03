@@ -74,8 +74,24 @@ def get_lang_feat(inputs, model, is_lang=True):
     return dense_clip_viz
 
 def load_lang_model(model_path=None):
+    # If model_path points to a whole pickled model (saved via torch.save(model, ...)),
+    # torch.load returns a callable nn.Module and we can use it directly. If it points to
+    # a state-dict / detectron2 checkpoint (e.g. sed_model_large.pth), torch.load returns a
+    # dict, so we must build the architecture and load the weights into it instead.
     if model_path is not None:
-        model = torch.load(model_path, map_location="cuda:0")
+        loaded = torch.load(model_path, map_location="cuda:0")
+        if not isinstance(loaded, dict):
+            # already a full model object
+            model = loaded
+            model.eval()
+            return model
+        # loaded is a checkpoint dict -> build model and load the weights into it
+        args = get_parser().parse_args([])          # use default config, ignore caller's argv
+        cfg = setup_cfg(args)
+        model = build_model(cfg)
+        model.eval()
+        checkpointer = DetectionCheckpointer(model)
+        checkpointer.load(model_path)
     else:
         args = get_parser().parse_args()
         cfg = setup_cfg(args)
