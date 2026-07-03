@@ -1,6 +1,6 @@
 inherit_from: "configs/rgbd/replicav2/base_config.yaml"
 Dataset:
-  dataset_path: "/media/Data6T1/datasets/room0_small/imap"
+  dataset_path: "/mnt/Data4/slam_datasets/vmap/room_0/imap/00/"
   single_thread: False
 Results:
   use_gui: False
@@ -15,8 +15,8 @@ Training:
 language:
   labels_from_file: False # if True, will load labels from a file (can be low res or high res langsplat labels) instead of running online language model
   language_train: True # if True, will train for the language
-  single_stage_ae: True # if True, will use cross-data ae (pretrained on cross-data of replica), if false will use a 2-stage ae
-  auto_ckpt_path: "pretrained_models/single_stage_cross_domain_omni/run1_office0_room0/checkpoints/epoch-59-step-2520.ckpt" #uncomment this to use the pretrained model
+  single_stage_ae: False # if True, will use cross-data ae (pretrained on cross-data of replica), if false will use a 2-stage ae
+  #auto_ckpt_path: "pretrained_models/single_stage_cross_domain_omni/run1_office0_room0/checkpoints/epoch-59-step-2520.ckpt" #uncomment this to use the pretrained model
   hr_model: True
   lang_code_size: 15
   online_ckpt_path: "/media/saimouli/Data6T/Replica/omni_data_result/online_15_room0.pth"

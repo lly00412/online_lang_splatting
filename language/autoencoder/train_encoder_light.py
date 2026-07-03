@@ -1,13 +1,13 @@
 import os
 import torch
 import torch.nn.functional as F
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 from model import AutoencoderLight
 import torch.nn as nn
-from lightning.pytorch.strategies.ddp import DDPStrategy
-from lightning.pytorch import loggers as pl_loggers
-from lightning.pytorch.callbacks import ModelCheckpoint
-import lightning as L
+from pytorch_lightning.strategies.ddp import DDPStrategy
+from pytorch_lightning import loggers as pl_loggers
+from pytorch_lightning.callbacks import ModelCheckpoint
+import pytorch_lightning as L
 from argparse import ArgumentParser
 from dataset import Autoencoder_dataset    
 
