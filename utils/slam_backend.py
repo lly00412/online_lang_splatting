@@ -14,6 +14,7 @@ Main responsibilities:
 - Keyframe management
 """
 
+import os
 import random
 import time
 
@@ -226,6 +227,10 @@ class BackEnd(mp.Process):
             recon_online: Reconstructed features from online autoencoder
             recon_coco: Reconstructed features from base autoencoder
         """
+        # Skip GUI visualization on headless machines (e.g. servers over SSH with no X display)
+        if not os.environ.get("DISPLAY"):
+            return
+
         # Calculate similarity maps
         sim_norm_recon = self.perform_similarity(recon_online)
         sim_norm_recon_coco = self.perform_similarity(recon_coco)
