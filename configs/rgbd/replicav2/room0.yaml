@@ -19,4 +19,4 @@ language:
   #auto_ckpt_path: "pretrained_models/single_stage_cross_domain_omni/run1_office0_room0/checkpoints/epoch-59-step-2520.ckpt" #uncomment this to use the pretrained model
   hr_model: True
   lang_code_size: 15
-  online_ckpt_path: "/media/saimouli/Data6T/Replica/omni_data_result/online_15_room0.pth"
+  online_ckpt_path: "/mnt/Data2/liyan/online_lang_splatting/results/replica/room0/omni_data_result/online_15_room0.pth"
