@@ -11,3 +11,16 @@ doxgen_generated
 doc
 .vscode
 __pycache__
+
+# Run outputs and datasets (not code)
+/results/
+/data/
+/media/
+
+# Heavy model / reconstruction artifacts
+*.pth
+*.pkl
+*.ply
+*.ckpt
+*.npy
+*.Xauthority
