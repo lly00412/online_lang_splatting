@@ -352,7 +352,13 @@ def evaluate_per_image(
     # (KeyError: 'pytorch-lightning_version').
     _ckpt = torch.load(ae_ckpt_path, map_location=device)
     _state = _ckpt["state_dict"] if isinstance(_ckpt, dict) and "state_dict" in _ckpt else _ckpt
-    model.load_state_dict(_state)
+    # Single-stage checkpoints are a bare AutoencoderMLP state_dict (keys "encoder.*"),
+    # but AutoencoderLight nests it under self.model (keys "model.encoder.*").
+    # Add the "model." prefix if the checkpoint lacks it.
+    _model_keys = list(model.state_dict().keys())
+    if not any(k.startswith("model.") for k in _state) and any(k.startswith("model.") for k in _model_keys):
+        _state = {f"model.{k}": v for k, v in _state.items()}
+    model.load_state_dict(_state, strict=False)
     model.to(device)
     model.eval()
 
