@@ -347,9 +347,12 @@ def evaluate_per_image(
     # Instantiate autoencoder and CLIP model
     clip_model = OpenCLIPNetwork(device)
     model = AutoencoderLight(encoder_hidden_dims, decoder_hidden_dims).to(device)
-    model = model.load_from_checkpoint(
-        ae_ckpt_path, encoder_hidden_dims=encoder_hidden_dims, decoder_hidden_dims=decoder_hidden_dims
-    )
+    # Load weights directly to avoid PyTorch-Lightning checkpoint version migration,
+    # which fails on checkpoints saved by the unified 'lightning' package
+    # (KeyError: 'pytorch-lightning_version').
+    _ckpt = torch.load(ae_ckpt_path, map_location=device)
+    _state = _ckpt["state_dict"] if isinstance(_ckpt, dict) and "state_dict" in _ckpt else _ckpt
+    model.load_state_dict(_state)
     model.to(device)
     model.eval()
 
@@ -424,7 +427,7 @@ if __name__ == "__main__":
     feat_dir = [os.path.join(args.root_dir, "lang")]
 
     # Labels created from the create_replica_labels.py
-    label_folder = os.path.join(args.root_dir, "gt", args.label_name)
+    label_folder = os.path.join(args.root_dir, args.label_name)
     output_folder = os.path.join(args.root_dir, "eval_results")
 
     dataset_name = args.dataset_name
