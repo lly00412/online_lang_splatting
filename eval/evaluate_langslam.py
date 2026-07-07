@@ -381,7 +381,7 @@ def evaluate_per_image(
             colormap_options,
             logger,
             device,
-            code_size=15,
+            code_size=code_size,
         )
         chosen_iou_all.append(mean_iou_chosen)
         acc_num_all.append(acc)
