@@ -1,9 +1,9 @@
 inherit_from: "configs/rgbd/replicav2/base_config.yaml"
 Dataset:
-  dataset_path: <YOUR_DATASET_PATH>
+  dataset_path: "/mnt/Data4/slam_datasets/Replica/room0"
   single_thread: False
 Results:
-  use_gui: True # True: will open an GUI
+  use_gui: False # True: will open an GUI
 Training:
   kf_interval: 4
   mapping_itr_num: 150
@@ -18,4 +18,4 @@ language:
   single_stage_ae: True # if True, will use cross-data ae (pretrained on cross-data of replica), if false will use a 2-stage ae
   hr_model: True
   lang_code_size: 3
-  auto_ckpt_path: "<YOUR_PRETRAINED_MODEL_PATH>/single_stage_AE_disent.pth"
+  auto_ckpt_path: "/mnt/Data2/liyan/online_lang_splatting/data/OnlineLanguageSplatting/Pretrained_models/single_stage_AE_disent.pth"

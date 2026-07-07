@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import lightning.pytorch as pl
+import pytorch_lightning as pl
 #import pytorch_lightning as pl
 import sys
 import os
@@ -356,13 +356,4 @@ class EncoderDecoderOnline(nn.Module):
             if not self.is_fitted:
                 raise ValueError("PCA model has not been fitted yet.")
             x_np = x.cpu().numpy()
-            x_reconstructed = self.pca.inverse_transform(x_np)
-            return torch.tensor(x_reconstructed, device=x.device).float()
-
-    def incremental_fit(self, x):
-        if self.method != 'pca':
-            raise ValueError("Incremental fitting is only applicable for PCA.")
-        x_np = x.cpu().numpy()
-        self.pca.partial_fit(x_np)
-        self.is_fitted = True
-        
+            x_reconstructed = s
